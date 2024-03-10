@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::hash::Hash;
+use num_bigint::{BigUint, ToBigUint};
+use num::Integer;
 
 #[derive(Debug)]
 pub enum FermiStats {
@@ -222,7 +224,6 @@ fn vf2_graph_iso_core(
   if next == g1.nodes.len() {
     return true;
   }
-  let node1 = &g1.nodes[next];
   let key1_n1 = &key1[next];
   for next2 in 0..g2.nodes.len() {
     // already matched
@@ -324,21 +325,73 @@ fn contraction_to_graph(
   }
 }
 
+#[derive(Debug)]
+pub struct Symm {
+  // edge symmetry factor (divide)
+  pub edge_symm: BigUint,
+  // vertex symmetry factor (divide)
+  pub vert_symm: BigUint,
+  // graph iso count (multiply)
+  pub count: BigUint,
+}
+impl Symm {
+  fn new() -> Self {
+    Self {
+      edge_symm: BigUint::from(1u64),
+      vert_symm: BigUint::from(1u64),
+      count: BigUint::from(1u64),
+    }
+  }
+  /// total symmetry factor to divide by
+  pub fn total(&self) -> BigUint {
+    let symm = &self.vert_symm * &self.edge_symm;
+    assert!(symm.is_multiple_of(&self.count));
+    symm / &self.count
+  }
+}
+
 pub fn enumerate_distinct_graphs(
   vert_kinds: Vec<usize>, theory: &Theory
-) -> HashMap<Graph, usize> {
+) -> HashMap<Graph, Symm> {
   let mut vertices = vert_kinds.iter().map(|ind| theory.make_vertex(*ind)).collect();
   let contractions = enumerate_contractions(&mut vertices, 0, 0, theory);
-  let mut graphs = HashMap::new();
+  let mut graphs: HashMap<Graph, Symm> = HashMap::new();
   contractions.into_iter().for_each(|c| {
     let mut graph = contraction_to_graph(&vert_kinds, &c, &theory.flavors);
     if !graphs.contains_key(&graph) {
       graph.contraction = Some(c);
-      graphs.insert(graph, 1);
+      graphs.insert(graph, Symm::new());
     }
     else {
-      *graphs.get_mut(&graph).unwrap() += 1;
+      graphs.get_mut(&graph).unwrap().count += BigUint::from(1u64);
     }
+  });
+
+  // fill in symmetry factors
+  let mut vert_symm = BigUint::from(1u64);
+  let mut vert_counts = vec![0; theory.vertices.len()];
+  vert_kinds.iter().for_each(|&kind| {
+    vert_counts[kind] += 1;
+  });
+  vert_counts.iter().for_each(|&count| {
+    for n in 2..=count {
+      let big_n = n.to_biguint().unwrap();
+      vert_symm *= big_n;
+    }
+  });
+
+  graphs.iter_mut().for_each(|graph_count| {
+    for bond in &graph_count.0.contraction.as_ref().unwrap().bonds {
+      for n in 2..=bond.degree.i {
+        let big_n = n.to_biguint().unwrap();
+        graph_count.1.edge_symm *= big_n;
+      }
+      for n in 2..=bond.degree.o {
+        let big_n = n.to_biguint().unwrap();
+        graph_count.1.edge_symm *= big_n;
+      }
+    }
+    graph_count.1.vert_symm = vert_symm.clone();
   });
   graphs
 }

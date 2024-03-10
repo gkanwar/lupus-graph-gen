@@ -309,7 +309,7 @@ fn config_drawing(stream: &mut String) {
 
 
 pub fn draw_contraction<F: Seek + Write>(
-  graph: &Graph, count: usize,
+  graph: &Graph, factor: usize,
   theory: &Theory, pdf: &mut PdfWriter<F>
 ) -> Res {
   let c = &graph.contraction.as_ref().unwrap();
@@ -345,7 +345,7 @@ pub fn draw_contraction<F: Seek + Write>(
   stream.push_str("BT /F1 12 Tf ");
   push_coord((0.1, 0.1), &mut stream);
   stream.push_str("Td ");
-  stream.push_str(&format!("(S~{}) Tj ", count));
+  stream.push_str(&format!("(S~{}) Tj ", factor));
   stream.push_str("ET ");
   
   let content = PdfValue::Indirect(pdf.create_object(PdfValue::ContentStream(stream)));
