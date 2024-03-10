@@ -9,18 +9,13 @@ fn main() -> Result<(), Error> {
   let theory = Theory {
     flavors, vertices
   };
-  let mut four = vec![
-    theory.make_vertex(0),
-    theory.make_vertex(0),
-    theory.make_vertex(0),
-    theory.make_vertex(0),
-  ];
-  let res4 = enumerate_contractions(&mut four, 0, 0, &theory);
+  let four = vec![0,0,0,0];
+  let graphs4 = enumerate_distinct_graphs(four, &theory);
   let f = File::create("test.pdf").map_err(Error::IOError)?;
   let mut pdf = PdfWriter::new(f)?;
-  for contraction in &res4 {
-    draw_contraction(contraction, &four, &theory, &mut pdf)?;
-    println!("{:?}", contraction);
+  for (graph,count) in &graphs4 {
+    draw_contraction(graph, *count, &theory, &mut pdf)?;
+    println!("{:?} (S=1/{})", graph, count);
   }
   pdf.write_all()?;
   Ok(())

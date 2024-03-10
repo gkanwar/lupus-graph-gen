@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::hash::Hash;
+
 #[derive(Debug)]
 pub enum FermiStats {
   Boson, Fermion
@@ -9,7 +12,7 @@ pub struct Flavor {
 }
 // degree (in,out) for one flavor at a vertex
 // (note: for uncharged flavors, out=0)
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug,Clone,Copy,PartialEq)]
 pub struct Degree {
   pub i: usize,
   pub o: usize,
@@ -17,6 +20,9 @@ pub struct Degree {
 impl Degree {
   pub fn new() -> Self {
     Self { i: 0, o: 0 }
+  }
+  pub fn conj(&self) -> Self {
+    Self { i: self.o, o: self.i }
   }
 }
 #[derive(Debug)]
@@ -163,8 +169,106 @@ pub fn enumerate_contractions(
       vertices[j].occupied[a].i -= assign_x[j-i-1];
     }
   }
-  
+
   out
+}
+
+#[derive(Debug)]
+pub struct Graph {
+  // bond colors
+  pub adj: Vec<Vec<usize>>,
+  // vert colors
+  pub nodes: Vec<usize>,
+  // raw contractions
+  pub contraction: Option<Contraction>,
+}
+impl Hash for Graph {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    let mut key = vec![];
+    for i in 0..self.nodes.len() {
+      let v = self.nodes[i];
+      let mut ec: Vec<usize> = self.adj[i].iter()
+        .filter(|&&x| x != 0).copied().collect();
+      ec.sort_unstable();
+      ec.push(v);
+      key.push(ec);
+    }
+    key.sort_unstable();
+    for item in key {
+      item.iter().for_each(|x| x.hash(state));
+    }
+  }
+}
+impl PartialEq for Graph {
+  fn eq(&self, other: &Self) -> bool {
+    // TODO! Real graph isomorphism check, e.g. using Ullman's
+    // NOTE: For charged particles, care is needed.
+    return true;
+  }
+}
+impl Eq for Graph {}
+
+
+fn contraction_to_graph(
+  vert_kinds: &Vec<usize>, c: &Contraction, flavors: &Vec<Flavor>
+) -> Graph
+{
+  let n_flavor = flavors.len();
+  let n_nodes = vert_kinds.len();
+  let mut degrees = vec![vec![vec![Degree::new(); n_nodes]; n_nodes]; n_flavor];
+  for bond in &c.bonds {
+    if flavors[bond.flavor].charged {
+      degrees[bond.flavor][bond.i][bond.j] = bond.degree;
+      degrees[bond.flavor][bond.j][bond.i] = bond.degree.conj();
+    }
+    else {
+      degrees[bond.flavor][bond.i][bond.j] = bond.degree;
+      degrees[bond.flavor][bond.j][bond.i] = bond.degree;
+    }
+  }
+  let mut adj = vec![vec![0; n_nodes]; n_nodes];
+  let mut edge_colors = HashMap::new();
+  for i in 0..n_nodes {
+    for j in 0..n_nodes {
+      let bond: Vec<(usize,usize)> = degrees.iter().map(
+        |degree_flav| {
+          let degree = degree_flav[i][j];
+          (degree.i, degree.o)
+        }).collect();
+      if !edge_colors.contains_key(&bond) {
+        let color = edge_colors.len()+1;
+        edge_colors.insert(bond, color);
+        adj[i][j] = color;
+      }
+      else {
+        adj[i][j] = *edge_colors.get(&bond).unwrap();
+      }
+    }
+  }
+  Graph {
+    adj,
+    nodes: vert_kinds.clone(),
+    contraction: None,
+  }
+}
+
+pub fn enumerate_distinct_graphs(
+  vert_kinds: Vec<usize>, theory: &Theory
+) -> HashMap<Graph, usize> {
+  let mut vertices = vert_kinds.iter().map(|ind| theory.make_vertex(*ind)).collect();
+  let contractions = enumerate_contractions(&mut vertices, 0, 0, theory);
+  let mut graphs = HashMap::new();
+  contractions.into_iter().for_each(|c| {
+    let mut graph = contraction_to_graph(&vert_kinds, &c, &theory.flavors);
+    if !graphs.contains_key(&graph) {
+      graph.contraction = Some(c);
+      graphs.insert(graph, 1);
+    }
+    else {
+      *graphs.get_mut(&graph).unwrap() += 1;
+    }
+  });
+  graphs
 }
 
 #[cfg(test)]
@@ -235,7 +339,10 @@ mod tests {
       theory.make_vertex(0),
     ];
     let res4 = enumerate_contractions(&mut four, 0, 0, &theory);
-    // TODO: is this correct?
     assert_eq!(res4.len(), 10);
+
+    let graphs4 = enumerate_distinct_graphs([0,0,0,0].to_vec(), &theory);
+    assert_eq!(graphs4.len(), 3);
+    // TODO: more stringent checks
   }
 }

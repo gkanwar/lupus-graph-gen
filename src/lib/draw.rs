@@ -1,6 +1,6 @@
 /// Module to draw Feynman graphs as PDF content streams.
 
-use crate::core::{Bond, Contraction, Theory, VertexState};
+use crate::core::{Graph, Theory};
 use crate::error::Error;
 use std::io::{self, Seek, Write};
 use std::result::Result;
@@ -94,6 +94,7 @@ pub struct PdfWriter<F: Seek + Write> {
   root_obj: usize,
   info_obj: usize,
   pages_obj: usize,
+  font_objs: Vec<usize>,
   obj_offsets: Option<Vec<u64>>,
   xref_offset: Option<u64>,
   f: F,
@@ -107,6 +108,7 @@ impl<F: Seek + Write> PdfWriter<F> {
       root_obj: 0,
       info_obj: 0,
       pages_obj: 0,
+      font_objs: vec![],
       obj_offsets: None,
       xref_offset: None,
       f
@@ -138,13 +140,18 @@ impl<F: Seek + Write> PdfWriter<F> {
     ind
   }
 
-  fn create_page(&mut self, content: PdfValue, resources: PdfValue, bounds: [i64; 4]) -> Res {
-    assert!(match resources { PdfValue::Dict(_) => true, _ => false });
+  fn create_page(&mut self, content: PdfValue, bounds: [i64; 4]) -> Res {
+    // assert!(match resources { PdfValue::Dict(_) => true, _ => false });
+    let mut resources = vec![];
+    for i in 0..self.font_objs.len() {
+      resources.push(
+        (format!("/F{}", i+1), PdfValue::Indirect(self.font_objs[i])));
+    }
     let page = PdfValue::Dict(
       vec![
         ("/Type".into(), PdfValue::Name("Page".into())),
         ("/MediaBox".into(), bounds.into_iter().collect::<Vec<i64>>().into()),
-        ("/Resources".into(), resources),
+        ("/Resources".into(), PdfValue::Dict(resources)),
         ("/Parent".into(), PdfValue::Indirect(self.pages_obj)),
         ("/Contents".into(), content),
       ]
@@ -170,6 +177,17 @@ impl<F: Seek + Write> PdfWriter<F> {
       }
       _ => { unreachable!(); }
     }
+    return OK;
+  }
+
+  pub fn add_font(&mut self, name: String) -> Res {
+    let font_dict = PdfValue::Dict(vec![
+      ("/Type".into(), PdfValue::Name("Font".into())),
+      ("/Subtype".into(), PdfValue::Name("Type1".into())),
+      ("/BaseFont".into(), PdfValue::Name(name)),
+    ]);
+    let obj = self.create_object(font_dict);
+    self.font_objs.push(obj);
     return OK;
   }
 
@@ -291,8 +309,10 @@ fn config_drawing(stream: &mut String) {
 
 
 pub fn draw_contraction<F: Seek + Write>(
-  c: &Contraction, vs: &Vec<VertexState>, theory: &Theory, pdf: &mut PdfWriter<F>
+  graph: &Graph, count: usize,
+  theory: &Theory, pdf: &mut PdfWriter<F>
 ) -> Res {
+  let c = &graph.contraction.as_ref().unwrap();
   // TODO: externals
   // FORNOW: assume vacuum bubble
   // FORNOW: construct a circle geometry just so we see everything
@@ -301,10 +321,10 @@ pub fn draw_contraction<F: Seek + Write>(
 
   // draw nodes
   let mut nodes = vec![];
-  for i in 0..vs.len() {
+  for i in 0..graph.nodes.len() {
     // TODO: do something with vertex type
-    let v = &vs[i];
-    let theta = 2.0*PI*(i as f64) / (vs.len() as f64);
+    let v = &graph.nodes[i];
+    let theta = 2.0*PI*(i as f64) / (graph.nodes.len() as f64);
     nodes.push((theta.cos()+1.5, theta.sin()+1.5));
     draw_node(nodes[nodes.len()-1], &mut stream);
   }
@@ -321,8 +341,15 @@ pub fn draw_contraction<F: Seek + Write>(
     draw_bond(x, y, bond.degree.i+bond.degree.o, &mut stream);
   }
 
+  // Note: Assumes at least one font has been pushed
+  stream.push_str("BT /F1 12 Tf ");
+  push_coord((0.1, 0.1), &mut stream);
+  stream.push_str("Td ");
+  stream.push_str(&format!("(S~{}) Tj ", count));
+  stream.push_str("ET ");
+  
   let content = PdfValue::Indirect(pdf.create_object(PdfValue::ContentStream(stream)));
-  pdf.create_page(content, PdfValue::Dict(vec![]), [0, 0, 72*3, 72*3])?;
+  pdf.create_page(content, [0, 0, 72*3, 72*3])?;
   
   return OK;
 }
