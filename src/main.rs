@@ -10,8 +10,8 @@ fn main() -> Result<(), Error> {
     flavors, vertices
   };
   {
-    let four = vec![0,0,0,0];
-    let graphs = enumerate_distinct_graphs(four, &theory);
+    let verts = vec![0,0,0,0];
+    let graphs = enumerate_distinct_graphs(verts, &theory);
     let f = File::create("scalar_4_phi4.pdf").map_err(Error::IOError)?;
     let mut pdf = PdfWriter::new(f)?;
     for (graph,count) in &graphs {
@@ -21,8 +21,8 @@ fn main() -> Result<(), Error> {
     pdf.write_all()?;
   }
   {
-    let six = vec![0,0,0,0,0,0];
-    let graphs = enumerate_distinct_graphs(six, &theory);
+    let verts = vec![0,0,0,0,0,0];
+    let graphs = enumerate_distinct_graphs(verts, &theory);
     let f = File::create("scalar_6_phi4.pdf").map_err(Error::IOError)?;
     let mut pdf = PdfWriter::new(f)?;
     for (graph,count) in &graphs {
@@ -32,8 +32,8 @@ fn main() -> Result<(), Error> {
     pdf.write_all()?;
   }
   {
-    let six = vec![0,0,0,0,0,0,0,0];
-    let graphs = enumerate_distinct_graphs(six, &theory);
+    let verts = vec![0,0,0,0,0,0,0,0];
+    let graphs = enumerate_distinct_graphs(verts, &theory);
     let f = File::create("scalar_8_phi4.pdf").map_err(Error::IOError)?;
     let mut pdf = PdfWriter::new(f)?;
     for (graph,count) in &graphs {

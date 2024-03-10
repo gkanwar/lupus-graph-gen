@@ -175,24 +175,18 @@ pub fn enumerate_contractions(
 
 #[derive(Debug)]
 pub struct Graph {
-  // bond colors
+  // bond coloring
   pub adj: Vec<Vec<usize>>,
-  // vert colors
+  // bond colors to degrees
+  pub edge_kinds: Vec<Vec<(usize,usize)>>,
+  // vert coloring
   pub nodes: Vec<usize>,
   // raw contractions
   pub contraction: Option<Contraction>,
 }
 impl Hash for Graph {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    let mut key = vec![];
-    for i in 0..self.nodes.len() {
-      let v = self.nodes[i];
-      let mut ec: Vec<usize> = self.adj[i].iter()
-        .filter(|&&x| x != 0).copied().collect();
-      ec.sort_unstable();
-      ec.push(v);
-      key.push(ec);
-    }
+    let mut key = build_node_contexts(self);
     key.sort_unstable();
     for item in key {
       item.iter().for_each(|x| x.hash(state));
@@ -201,13 +195,88 @@ impl Hash for Graph {
 }
 impl PartialEq for Graph {
   fn eq(&self, other: &Self) -> bool {
-    // TODO! Real graph isomorphism check, e.g. using Ullman's
-    // NOTE: For charged particles, care is needed.
-    return true;
+    vf2_graph_iso(self, other)
   }
 }
 impl Eq for Graph {}
 
+fn build_node_contexts(g: &Graph) -> Vec<Vec<(usize,usize)>> {
+  let mut key = vec![];
+  for i in 0..g.nodes.len() {
+    let v = g.nodes[i];
+    let mut ec: Vec<(usize,usize)> = g.adj[i].iter()
+      .filter(|&&x| x != 0).map(|&x| &g.edge_kinds[x]).flatten().cloned().collect();
+    ec.sort_unstable();
+    // HACK: add node color
+    ec.push((v,0));
+    key.push(ec);
+  }
+  key
+}
+
+fn vf2_graph_iso_core(
+  g1: &Graph, g2: &Graph, key1: &Vec<Vec<(usize,usize)>>, key2: &Vec<Vec<(usize,usize)>>,
+  partial_fwd: &mut Vec<Option<usize>>,
+  partial_bwd: &mut Vec<Option<usize>>, next: usize,
+) -> bool {
+  if next == g1.nodes.len() {
+    return true;
+  }
+  let node1 = &g1.nodes[next];
+  let key1_n1 = &key1[next];
+  for next2 in 0..g2.nodes.len() {
+    // already matched
+    if partial_bwd[next2].is_some() {
+      continue;
+    }
+    // key mismatch (incl. node color mismatch)
+    let key2_n2 = &key2[next2];
+    if key1_n1 != key2_n2 {
+      continue;
+    }
+    // edge mismatch within current partial matching
+    let mut edge_match = true;
+    for (i,color) in g1.adj[next].iter().enumerate() {
+      if i >= next {
+        break;
+      }
+      assert!(partial_fwd[i].is_some());
+      let fwd_i = partial_fwd[i].unwrap();
+      if g2.edge_kinds[g2.adj[next2][fwd_i]] != g1.edge_kinds[*color] {
+        edge_match = false;
+        break;
+      }
+    }
+    if !edge_match {
+      continue;
+    }
+    partial_fwd[next] = Some(next2);
+    partial_bwd[next2] = Some(next);
+    let sub_match = vf2_graph_iso_core(
+      g1, g2, key1, key2, partial_fwd, partial_bwd, next+1);
+    if sub_match {
+      return true;
+    }
+    partial_fwd[next] = None;
+    partial_bwd[next2] = None;
+  }
+  return false;
+}
+
+fn vf2_graph_iso(g1: &Graph, g2: &Graph) -> bool {
+  if g1.nodes.len() != g2.nodes.len() {
+    return false;
+  }
+  // NOTE: For charged particles, care is needed.
+  let key1 = build_node_contexts(g1);
+  let key2 = build_node_contexts(g2);
+  // for all i < next:
+  // g1.nodes[i] ~ g2.nodes[partial_fwd[i]]
+  // and partial_bwd[partial_fwd[i]] = i
+  let mut partial_fwd = vec![None; g1.nodes.len()];
+  let mut partial_bwd = vec![None; g1.nodes.len()];
+  vf2_graph_iso_core(g1, g2, &key1, &key2, &mut partial_fwd, &mut partial_bwd, 0)
+}
 
 fn contraction_to_graph(
   vert_kinds: &Vec<usize>, c: &Contraction, flavors: &Vec<Flavor>
@@ -227,7 +296,9 @@ fn contraction_to_graph(
     }
   }
   let mut adj = vec![vec![0; n_nodes]; n_nodes];
+  // TODO: could be a HashSet
   let mut edge_colors = HashMap::new();
+  let mut edge_kinds = vec![];
   for i in 0..n_nodes {
     for j in 0..n_nodes {
       let bond: Vec<(usize,usize)> = degrees.iter().map(
@@ -236,7 +307,8 @@ fn contraction_to_graph(
           (degree.i, degree.o)
         }).collect();
       if !edge_colors.contains_key(&bond) {
-        let color = edge_colors.len()+1;
+        let color = edge_colors.len();
+        edge_kinds.push(bond.clone());
         edge_colors.insert(bond, color);
         adj[i][j] = color;
       }
@@ -246,7 +318,7 @@ fn contraction_to_graph(
     }
   }
   Graph {
-    adj,
+    adj, edge_kinds,
     nodes: vert_kinds.clone(),
     contraction: None,
   }
@@ -274,6 +346,8 @@ pub fn enumerate_distinct_graphs(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::collections::hash_map::DefaultHasher;
+
   #[test]
   fn partition_into_simple() {
     let n = 10;
@@ -287,6 +361,7 @@ mod tests {
     }
     assert_eq!(parts.len(), 96);
   }
+
   #[test]
   fn partition_into_zeros() {
     let n = 0;
@@ -343,5 +418,73 @@ mod tests {
     let graphs4 = enumerate_distinct_graphs([0,0,0,0].to_vec(), &theory);
     assert_eq!(graphs4.len(), 3);
     // TODO: more stringent checks
+  }
+
+  #[test]
+  fn vf2_six_node_case1() {
+    let g1 = Graph {
+      nodes: vec![0; 6],
+      adj: vec![
+        vec![0,2,0,0,0,0],
+        vec![2,0,0,0,0,0],
+        vec![0,0,0,1,1,1],
+        vec![0,0,1,0,1,1],
+        vec![0,0,1,1,0,1],
+        vec![0,0,1,1,1,0],
+      ],
+      edge_kinds: vec![
+        vec![(0,0)],
+        vec![(1,0)],
+        vec![(3,0)],
+      ],
+      contraction: None,
+    };
+    let g2 = Graph {
+      nodes: vec![0; 6],
+      adj: vec![
+        vec![0,0,0,2,0,0],
+        vec![0,0,1,0,1,1],
+        vec![0,1,0,0,1,1],
+        vec![2,0,0,0,0,0],
+        vec![0,1,1,0,0,1],
+        vec![0,1,1,0,1,0],
+      ],
+      edge_kinds: vec![
+        vec![(0,0)],
+        vec![(1,0)],
+        vec![(3,0)],
+      ],
+      contraction: None,
+    };
+    let g3 = Graph {
+      nodes: vec![0; 6],
+      adj: vec![
+        vec![0,0,2,0,2,2],
+        vec![0,0,0,1,0,0],
+        vec![2,0,0,0,2,2],
+        vec![0,1,0,0,0,0],
+        vec![2,0,2,0,0,2],
+        vec![2,0,2,0,2,0],
+      ],
+      edge_kinds: vec![
+        vec![(0,0)],
+        vec![(3,0)],
+        vec![(1,0)],
+      ],
+      contraction: None,
+    };
+
+    assert_eq!(g1, g1);
+    assert_eq!(g2, g2);
+    assert_eq!(g3, g3);
+    assert_eq!(g1, g2);
+    assert_eq!(g1, g3);
+    assert_eq!(g2, g3);
+
+    let mut hasher = DefaultHasher::new();
+    let hash1 = g1.hash(&mut hasher);
+    let mut hasher = DefaultHasher::new();
+    let hash2 = g2.hash(&mut hasher);
+    assert_eq!(hash1, hash2);
   }
 }
