@@ -91,7 +91,7 @@ fn partition_into(
 pub fn enumerate_contractions(
   vertices: &mut Vec<VertexState>, i: usize, a: usize, theory: &Theory)
   -> Vec<Contraction> {
-  println!("args {:?} {} {}", vertices, i, a);
+  // println!("args {:?} {} {}", vertices, i, a);
   // base case 1
   if i == vertices.len() {
     return vec![Contraction { bonds: vec![] } ];
@@ -131,7 +131,7 @@ pub fn enumerate_contractions(
       other_open_y.push(0);
     }
   }
-  println!("Assigning for {} {} -> {:?} {:?}", open_x, open_y, other_open_x, other_open_y);
+  // println!("Assigning for {} {} -> {:?} {:?}", open_x, open_y, other_open_x, other_open_y);
 
   let assignments_x = partition_into(open_x, &other_open_x);
   let assignments_y = partition_into(open_y, &other_open_y);
@@ -154,9 +154,9 @@ pub fn enumerate_contractions(
           i, j
         });
       }
-      println!("Recursing... ");
+      // println!("Recursing... ");
       let sub = enumerate_contractions(vertices, i, a+1, theory);
-      println!("... result {:?}", sub);
+      // println!("... result {:?}", sub);
       for mut sub_contraction in sub {
         sub_contraction.bonds.extend(contraction_i.clone());
         out.push(sub_contraction);
@@ -280,7 +280,6 @@ mod tests {
     let sizes: Vec<usize> = vec![3, 4, 5, 6];
     let parts = partition_into(n, &sizes);
     for part in parts.iter() {
-      println!("{:?}", part);
       assert_eq!(part.iter().sum::<usize>(), n);
       for i in 0..part.len() {
         assert!(part[i] <= sizes[i]);

@@ -9,14 +9,38 @@ fn main() -> Result<(), Error> {
   let theory = Theory {
     flavors, vertices
   };
-  let four = vec![0,0,0,0];
-  let graphs4 = enumerate_distinct_graphs(four, &theory);
-  let f = File::create("test.pdf").map_err(Error::IOError)?;
-  let mut pdf = PdfWriter::new(f)?;
-  for (graph,count) in &graphs4 {
-    draw_contraction(graph, *count, &theory, &mut pdf)?;
-    println!("{:?} (S=1/{})", graph, count);
+  {
+    let four = vec![0,0,0,0];
+    let graphs = enumerate_distinct_graphs(four, &theory);
+    let f = File::create("scalar_4_phi4.pdf").map_err(Error::IOError)?;
+    let mut pdf = PdfWriter::new(f)?;
+    for (graph,count) in &graphs {
+      draw_contraction(graph, *count, &theory, &mut pdf)?;
+      println!("{:?} (S=1/{})", graph, count);
+    }
+    pdf.write_all()?;
   }
-  pdf.write_all()?;
+  {
+    let six = vec![0,0,0,0,0,0];
+    let graphs = enumerate_distinct_graphs(six, &theory);
+    let f = File::create("scalar_6_phi4.pdf").map_err(Error::IOError)?;
+    let mut pdf = PdfWriter::new(f)?;
+    for (graph,count) in &graphs {
+      draw_contraction(graph, *count, &theory, &mut pdf)?;
+      println!("{:?} (S=1/{})", graph, count);
+    }
+    pdf.write_all()?;
+  }
+  {
+    let six = vec![0,0,0,0,0,0,0,0];
+    let graphs = enumerate_distinct_graphs(six, &theory);
+    let f = File::create("scalar_8_phi4.pdf").map_err(Error::IOError)?;
+    let mut pdf = PdfWriter::new(f)?;
+    for (graph,count) in &graphs {
+      draw_contraction(graph, *count, &theory, &mut pdf)?;
+      println!("{:?} (S=1/{})", graph, count);
+    }
+    pdf.write_all()?;
+  }
   Ok(())
 }
