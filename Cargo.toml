@@ -7,3 +7,4 @@ edition = "2021"
 
 [lib]
 name = "lupus"
+path = "src/lib/lib.rs"

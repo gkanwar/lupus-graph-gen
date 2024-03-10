@@ -20,8 +20,8 @@ impl Degree {
   }
 }
 #[derive(Debug)]
-struct VertexKind {
-  degrees: Vec<Degree>,
+pub struct VertexKind {
+  pub degrees: Vec<Degree>,
 }
 #[derive(Debug)]
 pub struct VertexState {
@@ -31,8 +31,8 @@ pub struct VertexState {
 
 #[derive(Debug)]
 pub struct Theory {
-  flavors: Vec<Flavor>,
-  vertices: Vec<VertexKind>,
+  pub flavors: Vec<Flavor>,
+  pub vertices: Vec<VertexKind>,
   // TODO:
   // externals: Vec<VertexKind>,
 }
