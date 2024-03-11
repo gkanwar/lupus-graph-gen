@@ -249,6 +249,7 @@ impl<F: Seek + Write> PdfWriter<F> {
 }
 
 type Coord = (f64,f64);
+type Vector = (f64,f64);
 
 /// Convert drawing coords to coords printer points
 fn to_points(coord: Coord) -> Coord {
@@ -276,30 +277,99 @@ fn draw_node(coord: Coord, stream: &mut String) {
   stream.push_str("f ");
 }
 
-fn draw_line(x: Coord, y: Coord, stream: &mut String) {
+fn draw_line(x: Coord, y: Coord, flow: Option<Flow>, stream: &mut String) {
   push_coord(x, stream);
   stream.push_str("m ");
   push_coord(y, stream);
   stream.push_str("l S ");
+  match flow {
+    Some(flow) => {
+      let u = match flow {
+        Flow::Forward => normalize((y.0-x.0, y.1-x.1)),
+        Flow::Backward => normalize((x.0-y.0, x.1-y.1))
+      };
+      let mid = ((x.0 + y.0)/2.0, (x.1 + y.1)/2.0);
+      draw_arrow(mid, u, stream);
+    }
+    None => {}
+  };
 }
 
-fn draw_bond(x: Coord, y: Coord, degree: usize, stream: &mut String) {
+fn draw_arrow(x: Coord, u: Vector, stream: &mut String) {
+  const DX: f64 = 0.07;
+  let c = 3f64.sqrt()/2.0;
+  let v = rescale((u.1, -u.0), DX);
+  let u = rescale(u, DX);
+  let p1 = (x.0 + c*u.0, x.1 + c*u.1);
+  let p2 = (x.0 + c*v.0 - 0.5*u.0, x.1 + c*v.1 - 0.5*u.1);
+  let p3 = (x.0 - c*v.0 - 0.5*u.0, x.1 - c*v.1 - 0.5*u.1);
+  push_coord(p1, stream);
+  stream.push_str("m ");
+  push_coord(p2, stream);
+  stream.push_str("l ");
+  push_coord(p3, stream);
+  stream.push_str("l ");
+  stream.push_str("f ");
+}
+
+enum Flow { Forward, Backward }
+
+fn normsq(v: Vector) -> f64 {
+  v.0*v.0 + v.1*v.1
+}
+fn normalize(v: Vector) -> Vector {
+  let norm = normsq(v).sqrt();
+  (v.0 / norm, v.1 / norm)
+}
+fn rot90(v: Vector) -> Vector {
+  (v.1, -v.0)
+}
+fn rescale(v: Vector, s: f64) -> Vector {
+  (s*v.0, s*v.1)
+}
+
+fn draw_bond(
+  x: Coord, y: Coord, degree_in: usize, degree_out: usize, is_charged: bool,
+  stream: &mut String
+) {
+  let degree = degree_in + degree_out;
   if degree == 1 {
-    draw_line(x, y, stream);
+    let flow = if is_charged {
+      if degree_in == 1 {
+        Some(Flow::Backward)
+      }
+      else {
+        Some(Flow::Forward)
+      }
+    }
+    else {
+      None
+    };
+    draw_line(x, y, flow, stream);
+    if is_charged {
+
+    }
     return;
   }
-  let mut u: Coord = (y.0 - x.0, y.1 - x.1);
-  let norm = (u.0*u.0 + u.1*u.1).sqrt();
-  u.0 /= norm;
-  u.1 /= norm;
-  let v: Coord = (u.1, -u.0);
+  let v = rot90(normalize((y.0 - x.0, y.1 - x.1)));
   for i in 0..degree {
     let mut r = (i as f64) / ((degree-1) as f64); // in [0,1]
     r -= 0.5;
     r *= 0.1;
     let xp = (x.0 + r*v.0, x.1 + r*v.1);
     let yp = (y.0 + r*v.0, y.1 + r*v.1);
-    draw_line(xp, yp, stream);
+    let flow = if is_charged {
+      if i < degree_in {
+        Some(Flow::Backward)
+      }
+      else {
+        Some(Flow::Forward)
+      }
+    }
+    else {
+      None
+    };
+    draw_line(xp, yp, flow, stream);
   }
 }
 
@@ -338,7 +408,8 @@ pub fn draw_contraction<F: Seek + Write>(
     let y = nodes[bond.j];
     // TODO: flavors
     // TODO: better degree handling
-    draw_bond(x, y, bond.degree.i+bond.degree.o, &mut stream);
+    let is_charged = theory.flavors[bond.flavor].charged;
+    draw_bond(x, y, bond.degree.i, bond.degree.o, is_charged, &mut stream);
   }
 
   // Note: Assumes at least one font has been pushed
@@ -347,9 +418,9 @@ pub fn draw_contraction<F: Seek + Write>(
   stream.push_str("Td ");
   stream.push_str(&format!("(S~{}) Tj ", factor));
   stream.push_str("ET ");
-  
+
   let content = PdfValue::Indirect(pdf.create_object(PdfValue::ContentStream(stream)));
   pdf.create_page(content, [0, 0, 72*3, 72*3])?;
-  
+
   return OK;
 }

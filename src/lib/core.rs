@@ -114,47 +114,59 @@ pub fn enumerate_contractions(
   if !is_charged {
     assert_eq!(kind.degrees[a].o, 0);
   }
-  let open_x = kind.degrees[a].i - state.occupied[a].i;
-  let open_y = kind.degrees[a].o - state.occupied[a].o;
-  let mut other_open_x = vec![];
-  let mut other_open_y = vec![];
-  for vp in vertices[i+1..].iter() {
+  let (n_out, n_in) = if is_charged {
     // for charged wire in <- out and out -> in
-    if is_charged {
-      other_open_x.push(kind.degrees[a].o - vp.occupied[a].o);
-      other_open_y.push(kind.degrees[a].i - vp.occupied[a].i);
-    }
+    (kind.degrees[a].o - state.occupied[a].o,
+     kind.degrees[a].i - state.occupied[a].i)
+  }
+  else {
     // for uncharged wire in <-> in and ignore out
-    // (we build it anyway for uniformity)
-    else {
-      other_open_x.push(kind.degrees[a].i - vp.occupied[a].i);
+    (kind.degrees[a].i - state.occupied[a].i,
+     kind.degrees[a].o - state.occupied[a].o)
+  };
+  // (we build it anyway for uniformity)
+  let mut n_other_in = vec![];
+  let mut n_other_out = vec![];
+  for vp in vertices[i+1..].iter() {
+    let kind_p = &theory.vertices[vp.kind];
+    assert!(kind_p.degrees[a].i >= vp.occupied[a].i);
+    assert!(kind_p.degrees[a].o >= vp.occupied[a].o);
+    n_other_in.push(kind_p.degrees[a].i - vp.occupied[a].i);
+    n_other_out.push(kind_p.degrees[a].o - vp.occupied[a].o);
+    if !is_charged {
       assert_eq!(vp.occupied[a].o, 0);
-      assert_eq!(kind.degrees[a].o, 0);
-      other_open_y.push(0);
+      assert_eq!(kind_p.degrees[a].o, 0);
     }
+    // else {
+    //   other_open_x.push(kind_p.degrees[a].i - vp.occupied[a].i);
+    //   other_open_y.push(0);
+    // }
   }
   // println!("Assigning for {} {} -> {:?} {:?}", open_x, open_y, other_open_x, other_open_y);
 
-  let assignments_x = partition_into(open_x, &other_open_x);
-  let assignments_y = partition_into(open_y, &other_open_y);
+  let assignments_out = partition_into(n_out, &n_other_in);
+  let assignments_in = partition_into(n_in, &n_other_out);
   let mut out = vec![];
-  for assign_x in assignments_x.iter() {
-    assert_eq!(assign_x.len(), vertices.len() - i - 1);
+  for assign_out in assignments_out.iter() {
+    assert_eq!(assign_out.len(), vertices.len() - i - 1);
     for j in i+1..vertices.len() {
-      vertices[j].occupied[a].i += assign_x[j-i-1];
+      vertices[j].occupied[a].i += assign_out[j-i-1];
     }
-    for assign_y in assignments_y.iter() {
-      assert_eq!(assign_y.len(), vertices.len() - i - 1);
+    for assign_in in assignments_in.iter() {
+      assert_eq!(assign_in.len(), vertices.len() - i - 1);
       for j in i+1..vertices.len() {
-        vertices[j].occupied[a].o += assign_y[j-i-1];
+        vertices[j].occupied[a].o += assign_in[j-i-1];
       }
       let mut contraction_i = vec![];
       for j in i+1..vertices.len() {
-        contraction_i.push(Bond {
-          flavor: a,
-          degree: Degree { i: assign_x[j-i-1], o: assign_y[j-i-1] },
-          i, j
-        });
+        let degree = if is_charged {
+          Degree { i: assign_in[j-i-1], o: assign_out[j-i-1] }
+        }
+        else {
+          assert_eq!(assign_in[j-i-1], 0);
+          Degree { i: assign_out[j-i-1], o: 0 }
+        };
+        contraction_i.push(Bond {flavor: a, degree, i, j});
       }
       // println!("Recursing... ");
       let sub = enumerate_contractions(vertices, i, a+1, theory);
@@ -164,11 +176,11 @@ pub fn enumerate_contractions(
         out.push(sub_contraction);
       }
       for j in i+1..vertices.len() {
-        vertices[j].occupied[a].o -= assign_y[j-i-1];
+        vertices[j].occupied[a].o -= assign_in[j-i-1];
       }
     }
     for j in i+1..vertices.len() {
-      vertices[j].occupied[a].i -= assign_x[j-i-1];
+      vertices[j].occupied[a].i -= assign_out[j-i-1];
     }
   }
 
@@ -353,7 +365,7 @@ impl Symm {
 pub fn enumerate_distinct_graphs(
   vert_kinds: Vec<usize>, theory: &Theory
 ) -> HashMap<Graph, Symm> {
-  let mut vertices = vert_kinds.iter().map(|ind| theory.make_vertex(*ind)).collect();
+  let mut vertices = vert_kinds.iter().map(|&ind| theory.make_vertex(ind)).collect();
   let contractions = enumerate_contractions(&mut vertices, 0, 0, theory);
   let mut graphs: HashMap<Graph, Symm> = HashMap::new();
   contractions.into_iter().for_each(|c| {
@@ -539,5 +551,46 @@ mod tests {
     let mut hasher = DefaultHasher::new();
     let hash2 = g2.hash(&mut hasher);
     assert_eq!(hash1, hash2);
+  }
+
+  #[test]
+  fn two_to_two_scalar_tree_level() {
+    let real_scalar = Flavor { stats: FermiStats::Boson, charged: false };
+    let flavors = vec![real_scalar];
+    let cubic = VertexKind { degrees: vec![Degree { i: 3, o: 0 }] };
+    let external = VertexKind { degrees: vec![Degree { i: 1, o: 0 }] };
+    let vertices = vec![cubic, external];
+    let theory = Theory {
+      flavors, vertices
+    };
+
+    let graphs = enumerate_distinct_graphs(vec![0,0,1,1,1,1], &theory);
+    // two disconnected and one connected topology
+    assert_eq!(graphs.len(), 3);
+  }
+
+  #[test]
+  fn two_to_two_qed_tree_level() {
+    let scalar = Flavor { stats: FermiStats::Boson, charged: true };
+    let photon = Flavor { stats: FermiStats::Boson, charged: false };
+    let flavors = vec![scalar, photon];
+    let interaction = VertexKind { degrees: vec![
+      Degree { i: 1, o: 1 }, // matter
+      Degree { i: 1, o: 0 }, // photon
+    ]};
+    let ext_in = VertexKind { degrees: vec![
+      Degree { i: 0, o: 1 }, Degree::new()
+    ]};
+    let ext_out = VertexKind { degrees: vec![
+      Degree { i: 1, o: 0 }, Degree::new()
+    ]};
+    let vertices = vec![interaction, ext_in, ext_out];
+    let theory = Theory {
+      flavors, vertices
+    };
+
+    let graphs = enumerate_distinct_graphs(vec![0,0,1,1,2,2], &theory);
+    // connected + singly disconnected + doubly disconnected
+    assert_eq!(graphs.len(), 3);
   }
 }

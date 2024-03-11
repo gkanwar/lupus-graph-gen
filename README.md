@@ -14,8 +14,8 @@ The basic algorithm is similar to prior work:
 Features
 ========
  - [x] Automatic PDF outputs
- - [x] Multiple flavors (needs testing)
- - [x] Charged and uncharged (needs testing)
+ - [x] Multiple flavors
+ - [x] Charged and uncharged (needs more testing)
  - [ ] Fermions
  - [x] Vertex and edge symmetry factors
  - [ ] Tadpoles
