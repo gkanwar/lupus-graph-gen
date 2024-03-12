@@ -41,8 +41,6 @@ pub struct VertexState {
 pub struct Theory {
   pub flavors: Vec<Flavor>,
   pub vertices: Vec<VertexKind>,
-  // TODO:
-  // externals: Vec<VertexKind>,
 }
 impl Theory {
   pub fn make_vertex(&self, kind: usize) -> VertexState {
@@ -121,10 +119,10 @@ pub fn enumerate_contractions(
   }
   else {
     // for uncharged wire in <-> in and ignore out
+    // (we store it anyway for uniformity)
     (kind.degrees[a].i - state.occupied[a].i,
      kind.degrees[a].o - state.occupied[a].o)
   };
-  // (we build it anyway for uniformity)
   let mut n_other_in = vec![];
   let mut n_other_out = vec![];
   for vp in vertices[i+1..].iter() {
@@ -137,10 +135,6 @@ pub fn enumerate_contractions(
       assert_eq!(vp.occupied[a].o, 0);
       assert_eq!(kind_p.degrees[a].o, 0);
     }
-    // else {
-    //   other_open_x.push(kind_p.degrees[a].i - vp.occupied[a].i);
-    //   other_open_y.push(0);
-    // }
   }
   // println!("Assigning for {} {} -> {:?} {:?}", open_x, open_y, other_open_x, other_open_y);
 
@@ -309,7 +303,6 @@ fn contraction_to_graph(
     }
   }
   let mut adj = vec![vec![0; n_nodes]; n_nodes];
-  // TODO: could be a HashSet
   let mut edge_colors = HashMap::new();
   let mut edge_kinds = vec![];
   for i in 0..n_nodes {
