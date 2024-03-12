@@ -702,5 +702,9 @@ mod tests {
       &Filters::filter_graph(Box::new(is_connected)));
     // only one connected diagram up to iso
     assert_eq!(graphs.len(), 1);
+    let (_,symm) = graphs.into_iter().next().unwrap();
+    assert_eq!(symm.edge_symm, BigUint::from(1u64));
+    assert_eq!(symm.vert_symm, BigUint::from(8u64));
+    assert_eq!(symm.count, BigUint::from(4u64));
   }
 }
