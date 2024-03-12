@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use num_bigint::{BigUint, ToBigUint};
 use num::Integer;
+use crate::error::Error;
 
 #[derive(Debug)]
 pub enum FermiStats {
@@ -331,7 +332,7 @@ fn contraction_to_graph(
 }
 
 #[derive(Debug)]
-pub struct Symm {
+pub struct SymmFactor {
   // edge symmetry factor (divide)
   pub edge_symm: BigUint,
   // vertex symmetry factor (divide)
@@ -339,7 +340,7 @@ pub struct Symm {
   // graph iso count (multiply)
   pub count: BigUint,
 }
-impl Symm {
+impl SymmFactor {
   fn new() -> Self {
     Self {
       edge_symm: BigUint::from(1u64),
@@ -353,24 +354,113 @@ impl Symm {
     assert!(symm.is_multiple_of(&self.count));
     symm / &self.count
   }
+  /// total symmetry factor to divide by, cast to u64 or raise error
+  pub fn total_u64(&self) -> Result<u64, Error> {
+    let digits = self.total().to_u64_digits();
+    if digits.len() == 1{
+      Ok(digits[0])
+    }
+    else {
+      Err(Error::General("numeric overflow in symmetry factor".into()))
+    }
+  }
+}
+
+pub fn is_connected(g: &Graph) -> bool {
+  let n_nodes = g.adj.len();
+  if n_nodes == 0 {
+    return true;
+  }
+  let is_connecting: Vec<bool> = g.edge_kinds.iter()
+    .map(|degrees| {
+      for &(deg_in, deg_out) in degrees.iter() {
+        if deg_in > 0 || deg_out > 0 {
+          return true;
+        }
+      }
+      return false;
+    })
+    .collect();
+  let mut queue = vec![0];
+  let mut seen_count = 1;
+  let mut seen = vec![false; n_nodes];
+  seen[0] = true;
+  while queue.len() > 0 {
+    let node = queue.pop().unwrap();
+    for i in 0..g.adj[node].len() {
+      if seen[i] {
+        continue;
+      }
+      if !is_connecting[g.adj[node][i]] {
+        continue;
+      }
+      seen[i] = true;
+      seen_count += 1;
+      queue.push(i);
+    }
+  }
+  seen_count == n_nodes
+}
+
+type ContractionFilter = Box<dyn Fn(&Contraction, &Vec<usize>, &Theory) -> bool>;
+type GraphFilter = Box<dyn Fn(&Graph) -> bool>;
+pub struct Filters {
+  contraction_filter: Option<ContractionFilter>,
+  graph_filter: Option<GraphFilter>
+}
+impl Filters {
+  /// No active filters
+  pub fn none() -> Self {
+    Self {
+      contraction_filter: None,
+      graph_filter: None,
+    }
+  }
+  pub fn filter_contraction(f: ContractionFilter) -> Self {
+    Self {
+      contraction_filter: Some(f),
+      graph_filter: None,
+    }
+  }
+  pub fn filter_graph(f: GraphFilter) -> Self {
+    Self {
+      contraction_filter: None,
+      graph_filter: Some(f),
+    }
+  }
+  pub fn filter_both(cf: ContractionFilter, gf: GraphFilter) -> Self {
+    Self {
+      contraction_filter: Some(cf),
+      graph_filter: Some(gf),
+    }
+  }
 }
 
 pub fn enumerate_distinct_graphs(
-  vert_kinds: Vec<usize>, theory: &Theory
-) -> HashMap<Graph, Symm> {
+  vert_kinds: Vec<usize>, theory: &Theory, filters: &Filters,
+) -> HashMap<Graph, SymmFactor> {
   let mut vertices = vert_kinds.iter().map(|&ind| theory.make_vertex(ind)).collect();
   let contractions = enumerate_contractions(&mut vertices, 0, 0, theory);
-  let mut graphs: HashMap<Graph, Symm> = HashMap::new();
-  contractions.into_iter().for_each(|c| {
-    let mut graph = contraction_to_graph(&vert_kinds, &c, &theory.flavors);
-    if !graphs.contains_key(&graph) {
-      graph.contraction = Some(c);
-      graphs.insert(graph, Symm::new());
-    }
-    else {
-      graphs.get_mut(&graph).unwrap().count += BigUint::from(1u64);
-    }
-  });
+  let mut graphs: HashMap<Graph, SymmFactor> = HashMap::new();
+  contractions.into_iter()
+    .filter(|c| match &filters.contraction_filter {
+      Some(f) => f(c, &vert_kinds, theory),
+      None => true,
+    })
+    .for_each(|c| {
+      let mut graph = contraction_to_graph(&vert_kinds, &c, &theory.flavors);
+      if !graphs.contains_key(&graph) {
+        graph.contraction = Some(c);
+        graphs.insert(graph, SymmFactor::new());
+      }
+      else {
+        graphs.get_mut(&graph).unwrap().count += BigUint::from(1u64);
+      }
+    });
+  let mut graphs = match &filters.graph_filter {
+    Some(f) => graphs.into_iter().filter(|(k,_)| f(k)).collect(),
+    None => graphs,
+  };
 
   // fill in symmetry factors
   let mut vert_symm = BigUint::from(1u64);
@@ -473,7 +563,7 @@ mod tests {
     let res4 = enumerate_contractions(&mut four, 0, 0, &theory);
     assert_eq!(res4.len(), 10);
 
-    let graphs4 = enumerate_distinct_graphs([0,0,0,0].to_vec(), &theory);
+    let graphs4 = enumerate_distinct_graphs([0,0,0,0].to_vec(), &theory, &Filters::none());
     assert_eq!(graphs4.len(), 3);
     // TODO: more stringent checks
   }
@@ -557,7 +647,7 @@ mod tests {
       flavors, vertices
     };
 
-    let graphs = enumerate_distinct_graphs(vec![0,0,1,1,1,1], &theory);
+    let graphs = enumerate_distinct_graphs(vec![0,0,1,1,1,1], &theory, &Filters::none());
     // two disconnected and one connected topology
     assert_eq!(graphs.len(), 3);
   }
@@ -582,8 +672,35 @@ mod tests {
       flavors, vertices
     };
 
-    let graphs = enumerate_distinct_graphs(vec![0,0,1,1,2,2], &theory);
+    let graphs = enumerate_distinct_graphs(vec![0,0,1,1,2,2], &theory, &Filters::none());
     // connected + singly disconnected + doubly disconnected
     assert_eq!(graphs.len(), 3);
+  }
+
+  #[test]
+  fn two_to_two_qed_tree_level_conn() {
+    let scalar = Flavor { stats: FermiStats::Boson, charged: true };
+    let photon = Flavor { stats: FermiStats::Boson, charged: false };
+    let flavors = vec![scalar, photon];
+    let interaction = VertexKind { degrees: vec![
+      Degree { i: 1, o: 1 }, // matter
+      Degree { i: 1, o: 0 }, // photon
+    ]};
+    let ext_in = VertexKind { degrees: vec![
+      Degree { i: 0, o: 1 }, Degree::new()
+    ]};
+    let ext_out = VertexKind { degrees: vec![
+      Degree { i: 1, o: 0 }, Degree::new()
+    ]};
+    let vertices = vec![interaction, ext_in, ext_out];
+    let theory = Theory {
+      flavors, vertices
+    };
+
+    let graphs = enumerate_distinct_graphs(
+      vec![0,0,1,1,2,2], &theory,
+      &Filters::filter_graph(Box::new(is_connected)));
+    // only one connected diagram up to iso
+    assert_eq!(graphs.len(), 1);
   }
 }

@@ -1,19 +1,14 @@
 use lupus::prelude::*;
 use std::fs::File;
 
-fn run_case(fname: String, verts: Vec<usize>, theory: &Theory) -> Result<(), Error> {
-  let graphs = enumerate_distinct_graphs(verts, &theory);
+fn run_case(fname: String, verts: Vec<usize>, theory: &Theory, filters: &Filters) -> Result<(), Error> {
+  println!("Running case => {}", fname);
+  let graphs = enumerate_distinct_graphs(verts, theory, filters);
   let f = File::create(fname).map_err(Error::IOError)?;
   let mut pdf = PdfWriter::new(f)?;
   for (graph,symm) in &graphs {
     println!("{:?}", symm);
-    let factor = symm.total();
-    let factor = if factor.to_u64_digits().len() == 1 {
-      factor.to_u64_digits()[0] as usize
-    }
-    else {
-      return Err(Error::General("Count too large".into()));
-    };
+    let factor = symm.total_u64()? as usize;
     draw_contraction(graph, factor, &theory, &mut pdf)?;
     println!("{:?} (S=1/{})", graph, factor);
   }
@@ -31,10 +26,21 @@ fn main() -> Result<(), Error> {
     let scalar_phi3 = Theory {
       flavors, vertices
     };
-    run_case("scalar_2to2_phi3.pdf".into(), vec![0,0,1,1,1,1], &scalar_phi3)?;
-    run_case("scalar_4_phi3.pdf".into(), vec![0,0,0,0], &scalar_phi3)?;
-    run_case("scalar_6_phi3.pdf".into(), vec![0,0,0,0,0,0], &scalar_phi3)?;
-    run_case("scalar_8_phi3.pdf".into(), vec![0,0,0,0,0,0,0,0], &scalar_phi3)?;
+    run_case(
+      "scalar_2to2_phi3.pdf".into(), vec![0,0,1,1,1,1],
+      &scalar_phi3, &Filters::none())?;
+    run_case(
+      "scalar_4_phi3.pdf".into(), vec![0,0,0,0],
+      &scalar_phi3, &Filters::none())?;
+    run_case(
+      "scalar_6_phi3.pdf".into(), vec![0,0,0,0,0,0],
+      &scalar_phi3, &Filters::none())?;
+    run_case(
+      "scalar_6_phi3_conn.pdf".into(), vec![0,0,0,0,0,0],
+      &scalar_phi3, &Filters::filter_graph(Box::new(is_connected)))?;
+    // run_case(
+    //   "scalar_8_phi3.pdf".into(), vec![0,0,0,0,0,0,0,0],
+    //   &scalar_phi3, &Filters::none())?;
   }
   {
     let scalar = Flavor { stats: FermiStats::Boson, charged: true };
@@ -54,7 +60,9 @@ fn main() -> Result<(), Error> {
     let qed = Theory {
       flavors, vertices
     };
-    run_case("qed_2to2.pdf".into(), vec![0,0,1,1,2,2], &qed)?;
+    run_case(
+      "qed_2to2.pdf".into(), vec![0,0,1,1,2,2], &qed,
+      &Filters::filter_graph(Box::new(is_connected)))?;
   }
   Ok(())
 }
