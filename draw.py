@@ -159,7 +159,7 @@ def layout(graph):
     return fig
 
 def charged_particle():
-    return Particle(True, 'solid', 5.0)
+    return Particle(True, 'solid', 2.0)
 def photon():
     return Particle(False, 'wavy', 1.0)
 
@@ -170,16 +170,62 @@ def make_qed_t_channel():
     in1, in2, out1, out2, v1, v2 = nodes
     in1.tag = in2.tag = 'in'
     out1.tag = out2.tag = 'out'
-    edges = []
-    edges.append(connect(in1, v1, e))
-    edges.append(connect(v1, out1, e))
-    edges.append(connect(v1, v2, g))
-    edges.append(connect(in2, v2, e))
-    edges.append(connect(v2, out2, e))
+    edges = [
+        connect(in1, v1, e),
+        connect(v1, out1, e),
+        connect(v1, v2, g),
+        connect(in2, v2, e),
+        connect(v2, out2, e),
+    ]
     return Graph(nodes, edges)
+def make_box():
+    e = charged_particle()
+    g = photon()
+    nodes = make_nodes(8)
+    in1, in2, out1, out2, v1, v2, v3, v4 = nodes
+    in1.tag = in2.tag = 'in'
+    out1.tag = out2.tag = 'out'
+    edges = [
+        connect(in1, v1, g),
+        connect(in2, v2, g),
+        connect(out1, v4, g),
+        connect(out2, v3, g),
+        connect(v1, v2, e),
+        connect(v2, v3, e),
+        connect(v3, v4, e),
+        connect(v4, v1, e),
+    ]
+    return Graph(nodes, edges)
+def make_three_boxes():
+    e = charged_particle()
+    g = photon()
+    nodes = make_nodes(12)
+    in1, in2, out1, out2, v11, v12, v13, v14, v21, v22, v23, v24 = nodes
+    in1.tag = in2.tag = 'in'
+    out1.tag = out2.tag = 'out'
+    edges = [
+        connect(in1, v11, g),
+        connect(in2, v21, g),
+        connect(out1, v14, g),
+        connect(out2, v24, g),
+        connect(v11, v12, e),
+        connect(v11, v21, e),
+        connect(v21, v22, e),
+        connect(v12, v13, e),
+        connect(v12, v22, e),
+        connect(v22, v23, e),
+        connect(v13, v14, e),
+        connect(v13, v23, e),
+        connect(v23, v24, e),
+        connect(v14, v24, e),
+    ]
+    return Graph(nodes, edges)
+    
 
 def main():
-    fig = layout(make_qed_t_channel())
+    fig1 = layout(make_qed_t_channel())
+    fig2 = layout(make_box())
+    fig3 = layout(make_three_boxes())
     plt.show()
 
 if __name__ == '__main__':
