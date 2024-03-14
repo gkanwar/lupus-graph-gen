@@ -19,4 +19,4 @@ Features
  - [ ] Fermions
  - [x] Vertex and edge symmetry factors
  - [ ] Tadpoles
-
+ - [ ] Cross-checked versus qgraf
